@@ -3,12 +3,14 @@ import pandas as pd
 import pickle
 import os
 import matplotlib.pyplot as plt
+import shap
+import numpy as np
 
 st.set_page_config(page_title="Overdose Risk Prediction", layout="wide")
 
 # ================= HEADER =================
 st.markdown("""
-# 🩺 AI Clinical Decision Support System
+# 🩺 Machine Learning Based Clinical Decision Support
 ### 💊 Medicine Overdose Risk Prediction
 """)
 
@@ -230,23 +232,61 @@ if st.button("🔍 Predict Risk", use_container_width=True):
         for r in reasons:
             st.write(f"• {r}")
 
-    # ================= FEATURE IMPORTANCE =================
-    st.markdown("### 📈 Top Features Affecting Prediction")
+    # ================= DYNAMIC RISK DRIVER CHART =================
+    st.markdown("### 📈 Current Patient Risk Factors Overview")
 
-    imp = (
-        pd.DataFrame(
-            {"Feature": feature_order, "Importance": model.feature_importances_}
-        )
-        .sort_values("Importance", ascending=False)
-        .head(10)
-    )
+    drivers = {}
+
+    # Age influence
+    if age > 60:
+        drivers["Age > 60"] = 0.15
+
+    # Multiple drugs
+    if total_drugs >= 3:
+        drivers["Multiple Drugs"] = 0.12
+
+    # High dosage
+    if total_daily > 4000:
+        drivers["High Daily Dosage"] = 0.20
+    elif total_daily > 2500:
+        drivers["Moderate Dosage"] = 0.10
+
+    # Kidney disease
+    if kidney_disease:
+        drivers["Kidney Disease"] = 0.18
+
+    # Heart disease
+    if heart_disease:
+        drivers["Heart Disease"] = 0.10
+
+    # Diabetes
+    if diabetes:
+        drivers["Diabetes"] = 0.06
+
+    # Drug combinations
+    if flags["Opioid_Flag"]:
+        drivers["Opioid Usage"] = 0.14
+
+    if flags["Sedative_Flag"]:
+        drivers["Sedative Usage"] = 0.12
+
+    if flags["Opioid_Flag"] and flags["Sedative_Flag"]:
+        drivers["Opioid + Sedative"] = 0.25
+
+    # Low-risk fallback
+    if len(drivers) == 0:
+        drivers["Low Risk Inputs"] = 0.05
+
+    driver_df = pd.DataFrame(
+        list(drivers.items()), columns=["Factor", "Impact"]
+    ).sort_values("Impact", ascending=True)
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.barh(imp["Feature"], imp["Importance"])
-    ax.invert_yaxis()
+    ax.barh(driver_df["Factor"], driver_df["Impact"])
+    ax.set_xlabel("Relative Risk Influence")
+    ax.set_title("Patient-Specific Risk Factors")
     plt.tight_layout()
     st.pyplot(fig)
-
     # ================= SESSION =================
     st.session_state.final_risk = final_risk
     st.session_state.reasons = reasons
