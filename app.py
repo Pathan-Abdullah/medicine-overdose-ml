@@ -1,15 +1,11 @@
 import streamlit as st
 
-st.set_page_config(
-    page_title="Overdose ML System",
-    page_icon="💊",
-    layout="wide"
-)
+st.set_page_config(page_title="Overdose ML System", page_icon="💊", layout="wide")
 
 st.markdown("""
 # 💊 Medicine Overdose Detection System
 
-### 🧠 AI-Powered Clinical Decision Support
+### 🧠 Machine Learning Based Clinical Decision Support
 
 ---
 
