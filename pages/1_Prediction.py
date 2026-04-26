@@ -19,36 +19,40 @@ if not os.path.exists(MODEL_PATH):
     st.error("🚫 No trained model found. Please train first.")
     st.stop()
 
+
 @st.cache_resource
 def load_model():
     with open(MODEL_PATH, "rb") as f:
         return pickle.load(f)
+
 
 model_package = load_model()
 model = model_package["model"]
 encoder = model_package["encoder"]
 feature_order = model_package["feature_order"]
 
-# ================= MODEL INFO CARD =================
-with st.container():
-    col1, col2 = st.columns(2)
-    col1.info(f"📅 Trained On: {model_package.get('trained_on')}")
-    col2.info(f"📂 Dataset: {model_package.get('dataset_used')}")
+# ================= MODEL INFO =================
+col1, col2 = st.columns(2)
+col1.info(f"📅 Trained On: {model_package.get('trained_on')}")
+col2.info(f"📂 Dataset: {model_package.get('dataset_used')}")
 
 st.divider()
 
 # ================= INPUT SECTION =================
 st.markdown("## 👤 Patient Details")
 
-col1, col2, col3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
 
-with col1:
+with c1:
     age = st.slider("Age", 1, 100, 35)
-with col2:
+
+with c2:
     gender = st.selectbox("Gender", ["Male", "Female"])
-with col3:
+
+with c3:
     weight = st.slider("Weight (kg)", 30, 150, 65)
 
+# ================= CONDITIONS =================
 st.markdown("## 🧬 Medical Conditions")
 
 c1, c2, c3 = st.columns(3)
@@ -67,29 +71,54 @@ with c3:
 
 st.divider()
 
-# ================= MEDICATION SECTION =================
+# ================= MEDICATIONS =================
 st.markdown("## 💊 Medications")
 
 if "meds" not in st.session_state:
     st.session_state.meds = []
 
+# Add button
 if st.button("➕ Add Medication"):
     st.session_state.meds.append({"drug": "Analgesic", "dosage": 500, "freq": 1})
 
 drug_options = ["Analgesic", "Antibiotic", "Opioid", "Antipyretic", "Sedative"]
 
+# Medication cards
+remove_index = None
+
 for i in range(len(st.session_state.meds)):
     st.markdown(f"### Medicine {i+1}")
-    col1, col2, col3 = st.columns(3)
+
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
 
     with col1:
-        drug = st.selectbox("Drug", drug_options, key=f"drug{i}")
+        drug = st.selectbox("Drug Type", drug_options, key=f"drug{i}")
+
     with col2:
-        dosage = st.number_input("Dosage", 50, 5000, 500, key=f"dose{i}")
+        dosage = st.number_input(
+            "Dosage (mg)",
+            min_value=50,
+            max_value=5000,
+            value=500,
+            step=50,
+            key=f"dose{i}",
+        )
+
     with col3:
-        freq = st.selectbox("Frequency", [1,2,3,4], key=f"freq{i}")
+        freq = st.selectbox("Frequency / Day", [1, 2, 3, 4], key=f"freq{i}")
+
+    with col4:
+        st.write("")
+        st.write("")
+        if st.button("🗑 Remove", key=f"remove{i}"):
+            remove_index = i
 
     st.session_state.meds[i] = {"drug": drug, "dosage": dosage, "freq": freq}
+
+# Remove medication after loop
+if remove_index is not None:
+    st.session_state.meds.pop(remove_index)
+    st.rerun()
 
 st.divider()
 
@@ -97,7 +126,7 @@ st.divider()
 if st.button("🔍 Predict Risk", use_container_width=True):
 
     if len(st.session_state.meds) == 0:
-        st.error("Add at least one medication.")
+        st.error("⚠ Please add at least one medication.")
         st.stop()
 
     gender_encoded = encoder.transform([gender])[0]
@@ -106,20 +135,27 @@ if st.button("🔍 Predict Risk", use_container_width=True):
     total_daily = sum(m["dosage"] * m["freq"] for m in st.session_state.meds)
     max_single = max(m["dosage"] for m in st.session_state.meds)
 
-    flags = {f"{d}_Flag":0 for d in drug_options}
+    # Drug Flags
+    flags = {f"{d}_Flag": 0 for d in drug_options}
+
     for m in st.session_state.meds:
         flags[f"{m['drug']}_Flag"] = 1
 
+    # Input Data
     input_dict = {
-        "Age": age, "Gender": gender_encoded, "Weight": weight,
-        "Diabetes": int(diabetes), "Hypertension": int(hypertension),
+        "Age": age,
+        "Gender": gender_encoded,
+        "Weight": weight,
+        "Diabetes": int(diabetes),
+        "Hypertension": int(hypertension),
         "Heart_Disease": int(heart_disease),
         "Chronic_Kidney_Disease": int(kidney_disease),
-        "Asthma": int(asthma), "COPD": int(copd),
+        "Asthma": int(asthma),
+        "COPD": int(copd),
         "Total_Drugs": total_drugs,
         "Total_Daily_Dosage": total_daily,
         "Max_Single_Dosage": max_single,
-        **flags
+        **flags,
     }
 
     input_df = pd.DataFrame([input_dict])
@@ -130,36 +166,38 @@ if st.button("🔍 Predict Risk", use_container_width=True):
 
     input_df = input_df[feature_order]
 
+    # Base Prediction
     base_prob = model.predict_proba(input_df)[0][1]
 
-    # ================= INTERACTION =================
+    # ================= INTERACTION RULES =================
     interaction = 0
     reasons = []
 
     if flags["Opioid_Flag"] and flags["Sedative_Flag"]:
         interaction += 0.25
-        reasons.append("Opioid + Sedative")
+        reasons.append("Opioid + Sedative combination")
 
     if total_daily > 4000:
         interaction += 0.20
-        reasons.append("High dosage")
+        reasons.append("High total daily dosage")
 
     if age > 60 and total_drugs >= 3:
         interaction += 0.15
-        reasons.append("Elderly + multiple drugs")
+        reasons.append("Elderly patient with multiple drugs")
 
     if kidney_disease and total_daily > 3000:
         interaction += 0.20
-        reasons.append("Kidney + dosage")
+        reasons.append("Kidney disease with high dosage")
 
     final_risk = min(base_prob + interaction, 1.0)
 
-    # ================= RESULT CARDS =================
+    # ================= RESULTS =================
     st.markdown("## 📊 Risk Result")
 
     r1, r2, r3 = st.columns(3)
+
     r1.metric("Base Risk", f"{base_prob:.2f}")
-    r2.metric("Interaction", f"{interaction:.2f}")
+    r2.metric("Interaction Score", f"{interaction:.2f}")
     r3.metric("Final Risk", f"{final_risk:.2f}")
 
     st.progress(final_risk)
@@ -173,25 +211,42 @@ if st.button("🔍 Predict Risk", use_container_width=True):
     else:
         st.success("✅ LOW RISK")
 
+    # ================= MEDICATION SUMMARY =================
+    st.markdown("### 💊 Medication Summary")
+
+    summary_df = pd.DataFrame(st.session_state.meds)
+    summary_df.columns = ["Drug Type", "Dosage (mg)", "Frequency/Day"]
+    st.dataframe(summary_df, use_container_width=True)
+
+    st.info(f"""
+    Total Drugs: {total_drugs}  
+    Total Daily Dosage: {total_daily} mg  
+    Maximum Single Dose: {max_single} mg
+    """)
+
     # ================= REASONS =================
     if reasons:
         st.markdown("### 🧾 Risk Factors")
         for r in reasons:
-            st.write(f"- {r}")
+            st.write(f"• {r}")
 
     # ================= FEATURE IMPORTANCE =================
-    st.markdown("### 📈 Top Features")
+    st.markdown("### 📈 Top Features Affecting Prediction")
 
-    imp = pd.DataFrame({
-        "Feature": feature_order,
-        "Importance": model.feature_importances_
-    }).sort_values("Importance", ascending=False).head(10)
+    imp = (
+        pd.DataFrame(
+            {"Feature": feature_order, "Importance": model.feature_importances_}
+        )
+        .sort_values("Importance", ascending=False)
+        .head(10)
+    )
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(8, 5))
     ax.barh(imp["Feature"], imp["Importance"])
     ax.invert_yaxis()
+    plt.tight_layout()
     st.pyplot(fig)
 
-
+    # ================= SESSION =================
     st.session_state.final_risk = final_risk
     st.session_state.reasons = reasons
