@@ -3,7 +3,6 @@ import pandas as pd
 import pickle
 import os
 import matplotlib.pyplot as plt
-import shap
 import numpy as np
 
 st.set_page_config(page_title="Overdose Risk Prediction", layout="wide")
